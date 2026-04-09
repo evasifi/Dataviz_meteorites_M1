@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carte — Météorites</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+    .nav { flex-shrink: 0; }
+    .carte-page { flex: 1; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="index.html"><span class="nav-glyph">☄</span> Météorites</a>
+  <div class="nav-links">
+    <a href="index.html" class="nav-link"><span class="nav-num">01</span> Accueil</a>
+    <a href="dataviz.html" class="nav-link"><span class="nav-num">02</span> Dataviz</a>
+    <a href="carte.html" class="nav-link active"><span class="nav-num">03</span> Carte</a>
+  </div>
+</nav>
+
+<div class="carte-page">
+
+  <div class="carte-bar">
+    <span class="carte-bar-title">
+      <span style="color:var(--acc);text-shadow:0 0 10px rgba(255,80,80,.4)">03</span>
+      · Géovisualisation mondiale
+    </span>
+    <span class="carte-bar-sub">Pour découvrir les météorites, possibillités de sélection par types et époques. Enfin cliquer sur l'objet souhaité · 5 096 météorites observables </span>
+    <div class="count-badge">
+      <strong id="visCount">—</strong> affichées
+    </div>
+  </div>
+
+  <div class="carte-body">
+
+    <aside class="cmap-sidebar">
+      <div class="csb-title">☰ Filtres</div>
+
+      <div class="csb-section">
+        <div class="csb-label">Groupe taxonomique</div>
+        <div id="groupFilters"></div>
+      </div>
+
+      <div class="csb-section">
+        <div class="csb-label">Type de chute</div>
+        <div id="fallFilters"></div>
+      </div>
+
+      <div class="csb-section">
+        <div class="csb-label">Depuis l'année</div>
+        <input type="range" id="yrRange" class="yr-slider" min="860" max="2013" value="860" step="10">
+        <div class="yr-ends"><span>860</span><span>2013</span></div>
+        <div class="yr-val">≥ <span id="yrVal">860</span></div>
+      </div>
+
+      <button class="reset-btn" id="resetBtn">↺ Réinitialiser</button>
+
+      <div class="map-count-box">
+        <strong id="mapCount">—</strong>
+        météorites affichées
+      </div>
+
+      <div class="leg-section">
+        <div class="csb-label" style="margin-bottom:8px">Légende</div>
+        <div id="legItems"></div>
+      </div>
+    </aside>
+
+    <div id="map"></div>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="data.js"></script>
+<script>
+'use strict';
+
+const GROUPS = [
+  {id:'L',    label:'L Chondrites',  color:'#ff5050'},
+  {id:'H',    label:'H Chondrites',  color:'#ff6b35'},
+  {id:'LL',   label:'LL Chondrites', color:'#f0c96a'},
+  {id:'CM',   label:'Carbonées',     color:'#27AE60'},
+  {id:'Achon',label:'Achondrites',   color:'#00e8ff'},
+  {id:'Iron', label:'Fer',           color:'#a855f7'},
+  {id:'Other',label:'Autres',        color:'#5a7090'},
+];
+
+const FALLS = [
+  {id:'1', label:'Chutes observées', color:'#ff5050'},
+  {id:'0', label:'Trouvées',         color:'#5a7090'},
+];
+
+function getGroup(rc) {
+  if (!rc) return 'Other';
+  if (/^L\s/i.test(rc) || rc === 'L') return 'L';
+  if (/^H\s/i.test(rc) || rc === 'H') return 'H';
+  if (/^LL/i.test(rc))               return 'LL';
+  if (/^C[IMVOKBR]/i.test(rc))       return 'CM';
+  if (/^Iron|IAB|IIIAB|IVA|IVB/i.test(rc)) return 'Iron';
+  if (/Eucrite|Diogenite|Howardite|Achondrite|Ureilite|Aubrite|Nakhlite|Shergottite|Lunar/i.test(rc)) return 'Achon';
+  return 'Other';
+}
+
+function getColor(rc) {
+  return (GROUPS.find(g => g.id === getGroup(rc)) || GROUPS[6]).color;
+}
+
+function getRadius(m) {
+  return !m ? 4 : Math.max(4, Math.min(16, 4 + Math.log10(Math.max(m, 1)) * 1.5));
+}
+
+function fmtMass(g) {
+  if (!g) return '—';
+  if (g >= 1e6) return (g / 1e6).toFixed(2) + ' t';
+  if (g >= 1e3) return (g / 1e3).toFixed(1) + ' kg';
+  return g.toFixed(0) + ' g';
+}
+
+const state = {group: null, fall: null, yr: 860};
+
+const map = L.map('map', {
+  center: [20, 10], zoom: 2,
+  preferCanvas: true,
+  zoomControl: false,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 20,
+}).addTo(map);
+
+L.control.zoom({position: 'topright'}).addTo(map);
+window.addEventListener('resize', () => map.invalidateSize());
+
+let cluster = null;
+
+function renderMap() {
+  if (cluster) map.removeLayer(cluster);
+
+  cluster = L.markerClusterGroup({
+    maxClusterRadius: 48,
+    showCoverageOnHover: false,
+    chunkedLoading: true, chunkSize: 300, chunkDelay: 8,
+    iconCreateFunction(c) {
+      const n = c.getChildCount();
+      const sz = n > 500 ? 42 : n > 100 ? 34 : n > 20 ? 28 : 22;
+      const lbl = n >= 1000 ? Math.round(n / 1000) + 'k' : n;
+      return L.divIcon({
+        html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:rgba(255,80,80,.35);border:1.5px solid rgba(255,80,80,.9);display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:${sz > 34 ? 11 : 10}px;color:#04080e;box-shadow:0 0 12px rgba(255,80,80,.4)">${lbl}</div>`,
+        className: '', iconSize: [sz, sz],
+      });
+    }
+  });
+
+  const data = MET.map(r => ({
+    name: r[0], rc: r[1], mass: r[2], fall: r[3], year: r[4], lat: r[5], lon: r[6]
+  }));
+
+  const filtered = data.filter(d => {
+    if (state.group && getGroup(d.rc) !== state.group) return false;
+    if (state.fall  && d.fall !== state.fall)           return false;
+    if ((d.year || 0) < state.yr)                       return false;
+    return true;
+  });
+
+  document.getElementById('visCount').textContent = filtered.length.toLocaleString('fr-FR');
+  document.getElementById('mapCount').textContent  = filtered.length.toLocaleString('fr-FR');
+
+  filtered.forEach(d => {
+    const color = getColor(d.rc);
+    const m = L.circleMarker([d.lat, d.lon], {
+      radius: getRadius(d.mass),
+      fillColor: color, fillOpacity: .8,
+      color: 'rgba(255,255,255,.15)', weight: 1, opacity: 1,
+    });
+    m.bindPopup(`
+      <div style="font-family:'Space Mono',monospace;min-width:180px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:14px;font-weight:800;color:${color};text-shadow:0 0 10px ${color};margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.1)">${d.name}</div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px"><span style="color:#5a7090;font-size:9px;letter-spacing:.1em;text-transform:uppercase">Classe</span><span style="color:#b8c8d8">${d.rc || '—'}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px"><span style="color:#5a7090;font-size:9px;letter-spacing:.1em;text-transform:uppercase">Masse</span><span style="color:#ff5050">${fmtMass(d.mass)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px"><span style="color:#5a7090;font-size:9px;letter-spacing:.1em;text-transform:uppercase">Année</span><span style="color:#b8c8d8">${d.year || '—'}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px"><span style="color:#5a7090;font-size:9px;letter-spacing:.1em;text-transform:uppercase">Type</span><span style="color:#b8c8d8">${d.fall === '1' ? 'Observée' : 'Trouvée'}</span></div>
+      </div>`, {maxWidth: 250}
+    );
+    cluster.addLayer(m);
+  });
+
+  map.addLayer(cluster);
+}
+
+function buildFilters() {
+  const gC = document.getElementById('groupFilters');
+  GROUPS.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'f-btn';
+    btn.innerHTML = `<span class="f-dot" style="background:${g.color};box-shadow:0 0 5px ${g.color}"></span>${g.label}<span class="f-count" id="gc-${g.id}">—</span>`;
+    btn.addEventListener('click', () => {
+      state.group = (state.group === g.id) ? null : g.id;
+      gC.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
+      if (state.group) btn.classList.add('active');
+      renderMap();
+    });
+    gC.appendChild(btn);
+  });
+
+  const fC = document.getElementById('fallFilters');
+  FALLS.forEach(f => {
+    const btn = document.createElement('button');
+    btn.className = 'f-btn';
+    btn.innerHTML = `<span class="f-dot" style="background:${f.color};box-shadow:0 0 5px ${f.color}"></span>${f.label}`;
+    btn.addEventListener('click', () => {
+      state.fall = (state.fall === f.id) ? null : f.id;
+      fC.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
+      if (state.fall) btn.classList.add('active');
+      renderMap();
+    });
+    fC.appendChild(btn);
+  });
+
+  GROUPS.forEach(g => {
+    const n = MET.filter(r => getGroup(r[1]) === g.id).length;
+    const el = document.getElementById('gc-' + g.id);
+    if (el) el.textContent = n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;
+  });
+
+  const leg = document.getElementById('legItems');
+  GROUPS.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'leg-item';
+    row.innerHTML = `<span class="leg-dot" style="background:${g.color};box-shadow:0 0 4px ${g.color}"></span>${g.label}`;
+    leg.appendChild(row);
+  });
+}
+
+const yrR = document.getElementById('yrRange');
+const yrV = document.getElementById('yrVal');
+let yrTimer;
+
+yrR.addEventListener('input', function() {
+  state.yr = parseInt(this.value);
+  yrV.textContent = state.yr;
+  clearTimeout(yrTimer);
+  yrTimer = setTimeout(renderMap, 300);
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.group = null; state.fall = null; state.yr = 860;
+  yrR.value = 860; yrV.textContent = 860;
+  document.querySelectorAll('.f-btn').forEach(b => b.classList.remove('active'));
+  renderMap();
+});
+
+buildFilters();
+renderMap();
+</script>
+</body>
+</html>

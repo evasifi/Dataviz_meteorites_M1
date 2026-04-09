@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Données — Météorites</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="index.html"><span class="nav-glyph">☄</span> Météorites</a>
+  <div class="nav-links">
+    <a href="index.html" class="nav-link"><span class="nav-num">01</span> Accueil</a>
+    <a href="dataviz.html" class="nav-link active"><span class="nav-num">02</span> Dataviz</a>
+    <a href="carte.html" class="nav-link"><span class="nav-num">03</span> Carte</a>
+  </div>
+</nav>
+
+<div class="page-hero">
+  <div class="page-hero-inner">
+    <div class="ph-num">02 · Visualisation de données</div>
+    <h1 class="ph-title">L'ère des <em>grandes collectes</em></h1>
+    <p class="ph-lead">Depuis 1970, les programmes antarctiques ont transformé la météoritique. Des milliers de spécimens exhumés de la glace ont multiplié par dix notre collection mondiale.</p>
+  </div>
+</div>
+
+<!-- BAR CHART -->
+<section class="dv-sec">
+  <h2>Découvertes par décennie</h2>
+  <p class="dv-note">Survolez les barres pour visualiser le nombre d'objets découvert par décenie </p>
+  <div class="tog-row">
+    <button class="tog active" data-mode="all">Toutes</button>
+    <button class="tog" data-mode="fell">Chutes observées</button>
+    <button class="tog" data-mode="found">Trouvées</button>
+  </div>
+  <div class="chart-box">
+    <svg id="barChart" width="100%" style="display:block"></svg>
+  </div>
+  <div class="chart-ann" id="chartAnn">
+    <span class="ann-d">Survolez une barre</span>
+    <span class="ann-v">Positionnez le curseur sur le graphique</span>
+  </div>
+</section>
+
+<!-- DONUT -->
+<section class="dv-sec">
+  <h2>Répartition par groupe taxonomique</h2>
+  <p class="dv-note">Cliquez sur une tranche pour isoler le groupe</p>
+  <div class="chart-box">
+    <div class="donut-row">
+      <svg id="donutChart" width="220" height="220" style="flex-shrink:0;display:block"></svg>
+      <div class="donut-leg" id="donutLeg"></div>
+    </div>
+  </div>
+</section>
+
+<!-- TOP TABLE -->
+<section class="dv-sec" style="border-bottom:none">
+  <h2>Les dix météorites les plus massives</h2>
+  <p class="dv-note">Masses connues dans le dataset NASA · Toutes de type Fer</p>
+  <div class="chart-box">
+    <table class="top-tbl" id="topTbl">
+      <thead>
+        <tr>
+          <th>#</th><th>Nom</th><th>Classe</th><th>Pays</th><th>Année</th><th style="width:90px">Masse rel.</th><th>Masse</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<footer class="site-footer">
+  Données : <a href="https://data.nasa.gov/Space-Science/Meteorite-Landings/gh4g-9sfh" target="_blank">NASA Open Data Portal</a> · Domaine public
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+'use strict';
+
+const DD = {
+  all:   [{d:'1800',v:25},{d:'1810',v:19},{d:'1820',v:34},{d:'1830',v:32},{d:'1840',v:48},{d:'1850',v:72},{d:'1860',v:93},{d:'1870',v:105},{d:'1880',v:146},{d:'1890',v:148},{d:'1900',v:231},{d:'1910',v:300},{d:'1920',v:364},{d:'1930',v:465},{d:'1940',v:465},{d:'1950',v:590},{d:'1960',v:768},{d:'1970',v:1287},{d:'1980',v:6486},{d:'1990',v:12118},{d:'2000',v:17030},{d:'2010',v:6068}],
+  fell:  [{d:'1800',v:22},{d:'1810',v:18},{d:'1820',v:29},{d:'1830',v:25},{d:'1840',v:40},{d:'1850',v:61},{d:'1860',v:74},{d:'1870',v:82},{d:'1880',v:107},{d:'1890',v:96},{d:'1900',v:141},{d:'1910',v:175},{d:'1920',v:162},{d:'1930',v:186},{d:'1940',v:152},{d:'1950',v:191},{d:'1960',v:220},{d:'1970',v:197},{d:'1980',v:244},{d:'1990',v:270},{d:'2000',v:297},{d:'2010',v:155}],
+  found: [{d:'1800',v:3},{d:'1810',v:1},{d:'1820',v:5},{d:'1830',v:7},{d:'1840',v:8},{d:'1850',v:11},{d:'1860',v:19},{d:'1870',v:23},{d:'1880',v:39},{d:'1890',v:52},{d:'1900',v:90},{d:'1910',v:125},{d:'1920',v:202},{d:'1930',v:279},{d:'1940',v:313},{d:'1950',v:399},{d:'1960',v:548},{d:'1970',v:1090},{d:'1980',v:6242},{d:'1990',v:11848},{d:'2000',v:16733},{d:'2010',v:5913}],
+};
+
+const GG = [
+  {id:'L',    label:'L Chondrites',  pct:37.8, color:'#ff5050'},
+  {id:'H',    label:'H Chondrites',  pct:31.4, color:'#ff6b35'},
+  {id:'LL',   label:'LL Chondrites', pct:8.7,  color:'#f0c96a'},
+  {id:'CM',   label:'Carbonées',     pct:4.2,  color:'#27AE60'},
+  {id:'Achon',label:'Achondrites',   pct:7.1,  color:'#00e8ff'},
+  {id:'Iron', label:'Fer',           pct:3.6,  color:'#a855f7'},
+  {id:'Other',label:'Autres',        pct:7.2,  color:'#5a7090'},
+];
+
+const TOP = [
+  {name:'Hoba',            cls:'Iron (Ataxite)', country:'Namibie',   year:1920, t:60},
+  {name:'Ahnighito',       cls:'Iron (IIAB)',    country:'Groenland', year:1894, t:31},
+  {name:'Gancedo',         cls:'Iron (IIIAB)',   country:'Argentine', year:1969, t:30.8},
+  {name:'El Chaco',        cls:'Iron (IIIAB)',   country:'Argentine', year:1969, t:28.8},
+  {name:'Sikhote-Alin',    cls:'Iron (IIAB)',    country:'Russie',    year:1947, t:23},
+  {name:'Bacubirito',      cls:'Iron (Ataxite)', country:'Mexique',   year:1863, t:22},
+  {name:'Mbosi',           cls:'Iron',           country:'Tanzanie',  year:1930, t:16},
+  {name:'Campo del Cielo', cls:'Iron (IAB)',     country:'Argentine', year:1576, t:14},
+  {name:'Willamette',      cls:'Iron (IIIAB)',   country:'USA',       year:1902, t:14.1},
+  {name:'Mundrabilla',     cls:'Iron (IIIAB)',   country:'Australie', year:1911, t:11},
+];
+
+/* ── BAR CHART ── */
+let currentMode = 'all';
+
+function drawBar(mode) {
+  currentMode = mode;
+  const data = DD[mode];
+  const svg = document.getElementById('barChart');
+  const W = svg.parentElement.clientWidth - 2;
+  const H = 260;
+  const m = {top:10, right:12, bottom:36, left:52};
+  const w = W - m.left - m.right;
+  const h = H - m.top - m.bottom;
+
+  d3.select('#barChart').attr('height', H);
+  const s = d3.select('#barChart').html('').append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+  const x = d3.scaleBand().domain(data.map(d => d.d)).range([0, w]).padding(.22);
+  const y = d3.scaleLinear().domain([0, d3.max(data, d => d.v) * 1.1]).range([h, 0]);
+
+  // Grid lines
+  s.selectAll('.gl').data(y.ticks(5)).enter().append('line')
+    .attr('x1', 0).attr('x2', w)
+    .attr('y1', d => y(d)).attr('y2', d => y(d))
+    .attr('stroke', 'rgba(255,255,255,.05)');
+
+  // Gradient
+  const defs = d3.select('#barChart').append('defs');
+  const grad = defs.append('linearGradient').attr('id', 'bg').attr('x1', '0').attr('y1', '0').attr('x2', '0').attr('y2', '1');
+  grad.append('stop').attr('offset', '0%').attr('stop-color', '#ff5050');
+  grad.append('stop').attr('offset', '100%').attr('stop-color', '#cc2020').attr('stop-opacity', .7);
+
+  const ann = document.getElementById('chartAnn');
+
+  // Bars
+  s.selectAll('.bar').data(data).enter().append('rect')
+    .attr('x', d => x(d.d)).attr('width', x.bandwidth())
+    .attr('y', h).attr('height', 0)
+    .attr('fill', 'url(#bg)').style('cursor', 'pointer')
+    .on('mouseover', function(e, d) {
+      d3.select(this).attr('fill', '#ff5050');
+      ann.innerHTML = `<span class="ann-d">${d.d}s — ${d.v.toLocaleString('fr-FR')} météorites</span><span class="ann-v">${mode === 'fell' ? 'Chutes observées' : mode === 'found' ? 'Trouvées' : 'Toutes catégories'}</span>`;
+    })
+    .on('mouseout', function() { d3.select(this).attr('fill', 'url(#bg)'); })
+    .transition().duration(550).delay((_, i) => i * 18)
+    .attr('y', d => y(d.v)).attr('height', d => h - y(d.v));
+
+  // ANSMET annotation
+  const ax = x('1980');
+  if (ax !== undefined) {
+    s.append('line').attr('x1', ax).attr('x2', ax).attr('y1', 4).attr('y2', h)
+      .attr('stroke', 'rgba(255,80,80,.3)').attr('stroke-dasharray', '4,3');
+    s.append('text').attr('x', ax + 4).attr('y', 13)
+      .attr('fill', 'rgba(255,80,80,.6)').attr('font-size', 9)
+      .attr('font-family', "'Space Mono',monospace").text('← ANSMET');
+  }
+
+  // Axes
+  const showLabels = ['1800','1840','1880','1920','1960','2000'];
+  s.append('g').attr('transform', `translate(0,${h})`)
+    .call(d3.axisBottom(x).tickSize(0).tickFormat(d => showLabels.includes(d) ? d.slice(2) + 's' : ''))
+    .call(g => g.select('.domain').attr('stroke', 'rgba(255,255,255,.08)'))
+    .selectAll('text').attr('fill', '#5a7090').attr('font-size', 10)
+    .attr('font-family', "'Space Mono',monospace").attr('dy', 14);
+
+  s.append('g')
+    .call(d3.axisLeft(y).ticks(5).tickFormat(d => d >= 1000 ? (d / 1000) + 'k' : d).tickSize(0))
+    .call(g => g.select('.domain').remove())
+    .selectAll('text').attr('fill', '#5a7090').attr('font-size', 10)
+    .attr('font-family', "'Space Mono',monospace").attr('dx', -4);
+}
+
+document.querySelectorAll('.tog').forEach(b => {
+  b.addEventListener('click', function() {
+    document.querySelectorAll('.tog').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+    drawBar(this.dataset.mode);
+  });
+});
+
+drawBar('all');
+window.addEventListener('resize', () => drawBar(currentMode));
+
+/* ── DONUT ── */
+(function() {
+  const W = 220, H = 220, R = 88, rIn = 52;
+  const svg = d3.select('#donutChart').append('g').attr('transform', `translate(${W/2},${H/2})`);
+  const pie = d3.pie().value(d => d.pct).sort(null);
+  const arc = d3.arc().innerRadius(rIn).outerRadius(R);
+  const arcH = d3.arc().innerRadius(rIn).outerRadius(R + 9);
+
+  const cL = svg.append('text').attr('text-anchor', 'middle').attr('dy', '-.1em')
+    .attr('font-family', "'Bebas Neue',sans-serif").attr('font-size', 22)
+    .attr('font-weight', 800).attr('fill', '#ff5050')
+    .style('text-shadow', '0 0 20px rgba(255,80,80,.5)').text('86%');
+  const cS = svg.append('text').attr('text-anchor', 'middle').attr('dy', '1.3em')
+    .attr('font-family', "'Space Mono',monospace").attr('font-size', 9)
+    .attr('fill', '#5a7090').text('chondrites');
+
+  let sel = null;
+  const paths = svg.selectAll('.arc').data(pie(GG)).enter().append('path')
+    .attr('d', arc).attr('fill', d => d.data.color)
+    .attr('stroke', '#04080e').attr('stroke-width', 2)
+    .style('cursor', 'pointer').style('transition', 'opacity .15s')
+    .on('mouseover', function(e, d) {
+      d3.select(this).attr('d', arcH);
+      if (!sel) { cL.text(d.data.pct + '%'); cS.text(d.data.label.slice(0, 11)); }
+    })
+    .on('mouseout', function(e, d) {
+      if (sel !== d.data.id) d3.select(this).attr('d', arc);
+      if (!sel) { cL.text('86%'); cS.text('chondrites'); }
+    })
+    .on('click', function(e, d) {
+      if (sel === d.data.id) {
+        sel = null;
+        paths.attr('opacity', 1).attr('d', arc);
+        cL.text('86%'); cS.text('chondrites');
+      } else {
+        sel = d.data.id;
+        paths.attr('opacity', .15).attr('d', arc);
+        d3.select(this).attr('opacity', 1).attr('d', arcH);
+        cL.text(d.data.pct + '%'); cS.text(d.data.label.slice(0, 11));
+      }
+    });
+
+  const leg = d3.select('#donutLeg');
+  GG.forEach(g => {
+    const row = leg.append('div').attr('class', 'dl-item');
+    row.append('div').attr('class', 'dl-sw').style('background', g.color);
+    row.append('div').attr('class', 'dl-name').text(g.label);
+    row.append('div').attr('class', 'dl-pct').text(g.pct + '%');
+  });
+})();
+
+/* ── TOP TABLE ── */
+(function() {
+  const maxM = Math.max(...TOP.map(d => d.t));
+  const tbody = document.querySelector('#topTbl tbody');
+  TOP.sort((a, b) => b.t - a.t).forEach((d, i) => {
+    const pct = (d.t / maxM * 100).toFixed(0);
+    const rankColor = i === 0 ? '#ff5050' : i === 1 ? '#b8c8d8' : i === 2 ? '#ff6b35' : '#5a7090';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-family:'Bebas Neue',sans-serif;font-weight:800;color:${rankColor}">${i + 1}</td>
+      <td style="font-family:'Bebas Neue',sans-serif;font-weight:700;color:#fff">${d.name}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:10px;color:#5a7090">${d.cls}</td>
+      <td>${d.country}</td>
+      <td style="font-family:'Space Mono',monospace">${d.year}</td>
+      <td><div class="t-bar"><div class="t-fill" style="width:${pct}%"></div></div></td>
+      <td>${d.t} t</td>`;
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
